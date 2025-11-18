@@ -1,0 +1,14 @@
+# requirements.txt (cho ETL)
+
+# Dùng để gọi API của ml_service (HTTP/JSON)
+requests
+
+# Dùng để xử lý dữ liệu (giống Excel)
+pandas
+
+# Dùng để kết nối SQL Server (App DB và DWH)
+sqlalchemy
+pyodbc
+
+# Dùng để quản lý file .env (lưu pass)
+python-dotenv

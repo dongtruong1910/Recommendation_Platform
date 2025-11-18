@@ -1,0 +1,21 @@
+# BỎ QUA TOÀN BỘ DATA (Quan trọng nhất)
+data/
+
+# Bỏ qua môi trường ảo
+.venv
+venv
+/env/
+
+# Bỏ qua file cache của Python và IDE
+__pycache__/
+*.py[cod]
+*.egg-info
+.idea/
+.vscode/
+
+# Bỏ qua file scripts
+scripts/
+
+# Bỏ qua Git
+.git
+.gitignore

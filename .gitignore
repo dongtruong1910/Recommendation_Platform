@@ -1,0 +1,29 @@
+# --- 1. BẢO MẬT (QUAN TRỌNG NHẤT) ---
+.env
+.env.*
+!.env.example
+
+# --- 2. FILE DỮ LIỆU & MODEL NẶNG ---
+*.pth
+*.onnx
+*.h5
+# Bỏ qua thư mục data trong các service (nếu có)
+*/data/
+
+# --- 3. MÔI TRƯỜNG ẢO PYTHON (Rất Nặng) ---
+venv/
+.venv/
+env/
+*/venv/
+*/.venv/
+
+# --- 4. FILE RÁC PYTHON ---
+__pycache__/
+*/__pycache__/
+*.py[cod]
+
+# --- 5. IDE & HỆ ĐIỀU HÀNH ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

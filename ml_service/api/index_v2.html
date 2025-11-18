@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Model (CNN)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 30px;
+            text-align: center;
+        }
+
+        .card-header h1 {
+            color: #ffffff;
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .card-body {
+            padding: 35px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: #f8f9fa;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            left: -9999px;
+        }
+
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 16px;
+            background: #f8f9fa;
+            border: 2px dashed #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #666;
+            font-size: 15px;
+        }
+
+        .file-input-label:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+            color: #667eea;
+        }
+
+        .file-input-label.has-file {
+            border-color: #667eea;
+            background: #f0f4ff;
+            color: #667eea;
+            border-style: solid;
+        }
+
+        .file-icon {
+            margin-right: 8px;
+            font-size: 18px;
+        }
+
+        button[type="submit"] {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 10px;
+        }
+
+        button[type="submit"]:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        button[type="submit"]:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #result-container {
+            margin-top: 30px;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .result-header h3 {
+            color: #333;
+            font-size: 20px;
+            margin: 0;
+        }
+
+        .result-icon {
+            font-size: 24px;
+        }
+
+        .predictions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .prediction-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 18px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+
+        .prediction-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .prediction-label {
+            font-size: 18px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .prediction-percentage {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: 800;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+            transition: width 0.8s ease;
+        }
+
+        .error-message {
+            background: #fee;
+            border-left: 4px solid #f44;
+            color: #c33;
+            padding: 18px;
+            border-radius: 12px;
+        }
+
+        .json-debug {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 16px;
+            border-radius: 10px;
+            overflow-x: auto;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            margin-top: 20px;
+            max-height: 300px;
+        }
+
+        .debug-toggle {
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        .debug-toggle button {
+            background: none;
+            border: 1px solid #ddd;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            color: #666;
+            font-size: 13px;
+            transition: all 0.3s ease;
+        }
+
+        .debug-toggle button:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h1>🧠 CNN Model Prediction</h1>
+            </div>
+
+            <div class="card-body">
+                <form id="predict-form">
+                    <div class="form-group">
+                        <label for="text_content">📝 Text Content</label>
+                        <input type="text" id="text_content" name="text_content" placeholder="Nhập nội dung văn bản..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="image_file">🖼️ Image File</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="image_file" name="image_file" accept="image/*" required>
+                            <label for="image_file" class="file-input-label" id="file-label">
+                                <span class="file-icon">📎</span>
+                                <span id="file-name">Chọn file ảnh...</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submit-button">Dự đoán</button>
+                </form>
+
+                <div id="result-container">
+                    <div class="result-header">
+                        <span class="result-icon">✨</span>
+                        <h3>Kết quả dự đoán</h3>
+                    </div>
+                    <div id="predictions-list" class="predictions-list"></div>
+
+                    <div class="debug-toggle">
+                        <button type="button" id="toggle-json">Xem JSON gốc</button>
+                    </div>
+                    <pre id="result-json" class="json-debug" style="display: none;"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('predict-form');
+        const submitButton = document.getElementById('submit-button');
+        const resultContainer = document.getElementById('result-container');
+        const resultJson = document.getElementById('result-json');
+        const predictionsList = document.getElementById('predictions-list');
+        const fileInput = document.getElementById('image_file');
+        const fileLabel = document.getElementById('file-label');
+        const fileName = document.getElementById('file-name');
+        const toggleJsonBtn = document.getElementById('toggle-json');
+
+        // Xử lý hiển thị tên file
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                fileName.textContent = e.target.files[0].name;
+                fileLabel.classList.add('has-file');
+            } else {
+                fileName.textContent = 'Chọn file ảnh...';
+                fileLabel.classList.remove('has-file');
+            }
+        });
+
+        // Toggle JSON debug view
+        toggleJsonBtn.addEventListener('click', () => {
+            if (resultJson.style.display === 'none') {
+                resultJson.style.display = 'block';
+                toggleJsonBtn.textContent = 'Ẩn JSON gốc';
+            } else {
+                resultJson.style.display = 'none';
+                toggleJsonBtn.textContent = 'Xem JSON gốc';
+            }
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const formData = new FormData(form);
+
+            submitButton.disabled = true;
+            submitButton.textContent = '⏳ Đang xử lý...';
+            resultContainer.style.display = 'none';
+
+            try {
+                const response = await fetch('/predict_v2', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server báo lỗi: ${response.status} ${errorText}`);
+                }
+
+                const data = await response.json();
+
+                // Hiển thị JSON gốc
+                resultJson.textContent = JSON.stringify(data, null, 2);
+                resultJson.style.display = 'none';
+                toggleJsonBtn.textContent = 'Xem JSON gốc';
+
+                // Xử lý và hiển thị predictions
+                displayPredictions(data);
+
+                resultContainer.style.display = 'block';
+
+            } catch (error) {
+                predictionsList.innerHTML = `
+                    <div class="error-message">
+                        <strong>❌ Lỗi:</strong> ${error.message}
+                    </div>
+                `;
+                resultJson.style.display = 'none';
+                resultContainer.style.display = 'block';
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Dự đoán';
+            }
+        });
+
+        function displayPredictions(data) {
+            predictionsList.innerHTML = '';
+
+            // Xử lý định dạng với predicted_labels và all_probabilities
+            let predictions = [];
+
+            if (data.predicted_labels && data.all_probabilities) {
+                // Lấy các nhãn được dự đoán và xác suất tương ứng
+                predictions = data.predicted_labels.map(label => ({
+                    label: label,
+                    confidence: data.all_probabilities[label] || 0
+                }));
+            }
+            // Trường hợp 1: data có trường predictions (array)
+            else if (data.predictions && Array.isArray(data.predictions)) {
+                predictions = data.predictions;
+            }
+            // Trường hợp 2: data có trường prediction (object với label và confidence)
+            else if (data.prediction) {
+                predictions = [data.prediction];
+            }
+            // Trường hợp 3: data có trường label và confidence/probability
+            else if (data.label) {
+                predictions = [{
+                    label: data.label,
+                    confidence: data.confidence || data.probability || 0
+                }];
+            }
+            // Trường hợp 4: data là array trực tiếp
+            else if (Array.isArray(data)) {
+                predictions = data;
+            }
+
+            if (predictions.length === 0) {
+                predictionsList.innerHTML = `
+                    <div class="error-message">
+                        Không tìm thấy kết quả dự đoán trong response
+                    </div>
+                `;
+                return;
+            }
+
+            // Sắp xếp theo confidence giảm dần
+            predictions.sort((a, b) => {
+                const confA = a.confidence || a.probability || 0;
+                const confB = b.confidence || b.probability || 0;
+                return confB - confA;
+            });
+
+            // Hiển thị từng prediction
+            predictions.forEach((pred, index) => {
+                const label = pred.label || pred.class || `Nhãn ${index + 1}`;
+                const confidence = pred.confidence || pred.probability || 0;
+                const percentage = (confidence * 100).toFixed(2);
+
+                const item = document.createElement('div');
+                item.className = 'prediction-item';
+                item.innerHTML = `
+                    <div class="prediction-label">
+                        <span>${label}</span>
+                        <span class="prediction-percentage">${percentage}%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 0%"></div>
+                    </div>
+                `;
+                predictionsList.appendChild(item);
+
+                // Animate progress bar
+                setTimeout(() => {
+                    const progressBar = item.querySelector('.progress-bar');
+                    progressBar.style.width = `${percentage}%`;
+                }, 100);
+            });
+        }
+    </script>
+</body>
+</html>

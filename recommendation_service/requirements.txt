@@ -1,0 +1,18 @@
+# requirements.txt (cho Recommendation)
+
+# 1. Dùng để chạy API (giống ml_service)
+fastapi
+uvicorn[standard]
+python-multipart
+
+# 2. Dùng để kết nối DWH (giống etl_service)
+sqlalchemy
+pyodbc
+python-dotenv
+
+# 3. (MỚI) Dùng để kết nối "Tủ lạnh" (Kho sẵn)
+redis
+
+# Dùng để tính toán, xử lý data
+pandas
+numpy

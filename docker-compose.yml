@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # === 1. HẠ TẦNG (Lấy từ file của bạn bạn) ===
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssql
+    environment:
+      - ACCEPT_EULA=Y
+      # Nó sẽ tự động đọc biến SA_PASSWORD từ file .env
+      - SA_PASSWORD=${SA_PASSWORD} 
+    ports:
+      - "1433:1433" # Mở cổng 1433 để bạn có thể truy cập bằng SSMS
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379" # Mở cổng 6379 để bạn có thể truy cập bằng RedisInsight
+    volumes:
+      - redis_data:/data
+
+  # === 2. CÁC SERVICE "KHOA HỌC" CỦA BẠN ===
+  
+  # Image 1: Lò vi sóng (ML)
+  ml_service:
+    build: ./ml_service # Trỏ đến thư mục ml_service
+    container_name: ml_service
+    restart: always
+    ports:
+      - "8000:8000" # ETL sẽ gọi cổng 8000 này
+
+  # Image 2: Xe tải (ETL)
+  etl_service:
+    build: ./etl_service # Trỏ đến thư mục etl_service
+    container_name: etl_service
+    # Nó sẽ tự động đọc các biến trong file .env
+    env_file:
+      - .env 
+    # Bắt buộc: Phải chờ CSDL và ML Service chạy xong
+    depends_on:
+      - mssql
+      - ml_service
+    # Đây là "Job", không phải server. Chạy 1 lần rồi tắt.
+    # (Bạn sẽ phải chạy nó bằng tay)
+    restart: "no" 
+    # Ghi đè CMD: Chạy file python
+    command: ["python", "jobs/run_etl.py"] 
+
+  # Image 3: Quầy hàng (Recommendation)
+  recommendation_service:
+    build: ./recommendation_service # Trỏ đến thư mục recommendation_service
+    container_name: recommendation_service
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - mssql
+      - redis
+    ports:
+      - "8001:8001" # App (Frontend) sẽ gọi cổng 8001 này
+
+# Định nghĩa "Ổ cứng ảo" (Volumes)
+volumes:
+  mssql_data:
+  redis_data:
