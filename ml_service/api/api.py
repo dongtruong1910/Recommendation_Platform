@@ -1,12 +1,16 @@
 # ========================
 # IMPORT MODULES
 # ========================
+from urllib.parse import urlparse
+
 import torch
 import json
 import requests
 import tempfile
 import uuid
 import os  #
+
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -57,7 +61,7 @@ print("--- Khởi động ML Service ---")
 
 # Lấy đường dẫn thư mục gốc (ml_service)
 # Giả sử file này ở ml_service/api/api.py
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(ROOT_DIR, "models", "best_model.pth")
 
 if not os.path.exists(MODEL_PATH):
@@ -90,7 +94,11 @@ async def predict_batch(batch_input: BatchInput):
                     response = requests.get(url, timeout=10, headers=HEADERS)
                     response.raise_for_status()
 
-                    ext = os.path.splitext(url)[1] or ".jpg"
+                    # Code mới (Đã sửa)
+                    parsed_url = urlparse(url)  # Tách URL ra
+                    clean_path = parsed_url.path  # Chỉ lấy phần đường dẫn, bỏ qua phần ?query...
+                    ext = os.path.splitext(clean_path)[1] or ".jpg"  # Lấy đuôi từ đường dẫn sạch
+
                     filename = f"{uuid.uuid4()}{ext}"
                     save_path = os.path.join(temp_dir, filename)
 
@@ -117,3 +125,6 @@ async def predict_batch(batch_input: BatchInput):
 
     return BatchResponse(predictions=results)
 
+if __name__ == "__main__":
+    print("--- CHẠY TRỰC TIẾP (Bằng cách bấm Play ▶️) ---")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

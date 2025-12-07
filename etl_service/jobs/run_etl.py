@@ -130,13 +130,19 @@ def extract_data(app_engine, dwh_engine, last_timestamp):
         df_posts = pd.read_sql(query_posts, app_engine)
         df_interactions = pd.read_sql(query_interactions, app_engine)
 
-        # 3. TÍNH DẤU TRANG MỚI (MAX TIME)
-        new_watermark = None
+        # 1. Tìm thời gian mới nhất trong Posts
+        max_post_time = last_timestamp
         if not df_posts.empty:
-            new_watermark = df_posts['post_create_at'].max()
+            max_post_time = df_posts['post_create_at'].max()
 
-        if pd.isna(new_watermark):
-            new_watermark = last_timestamp  # Giữ nguyên dấu trang cũ
+        # 2. Tìm thời gian mới nhất trong Interactions
+        max_inter_time = last_timestamp
+        if not df_interactions.empty:
+            max_inter_time = df_interactions['create_at'].max()
+
+        # 3. Dấu trang mới là cái nào LỚN HƠN (Mới hơn)
+        # (Dùng hàm max của Python để so sánh 2 datetime)
+        new_watermark = max(max_post_time, max_inter_time)
 
         print(f"  -> Trích xuất: {len(df_posts)} posts, {len(df_interactions)} tương tác.")
         print(f"  -> Dấu trang (Watermark) mới sẽ là: '{new_watermark}'")
@@ -217,105 +223,108 @@ def transform_enrich(df_posts, ml_api_url):
 
 # --- [BƯỚC 4: (L) LOAD - TẢI VÀO DWH] ---
 
-def load_to_dwh(engine, df_posts, df_interactions, df_categories, df_bridge, new_watermark):
-    """Tải các DataFrame đã xử lý vào DWH VÀ LƯU DẤU TRANG THỜI GIAN."""
+def load_to_dwh(engine, df_posts, df_interactions, df_categories, df_bridge, new_watermark, old_watermark):
+    """Tải dữ liệu vào DWH và dùng kỹ thuật UPSERT để lưu Watermark."""
     print("Bắt đầu (L) Load...")
 
-    # Biến cờ để kiểm tra xem có nên cập nhật watermark không
     load_successful = True
 
-    with engine.begin() as conn:  # Mở 1 transaction
+    # Mở Transaction: Được ăn cả, ngã về không
+    with engine.begin() as conn:
         try:
-            # --- 1. Tải Dim Categories ---
-            existing_cats_df = pd.read_sql("SELECT category_name FROM dim_categories", conn)
-            existing_cats = set(existing_cats_df['category_name'])
-            new_cats_df = df_categories[~df_categories['category_name'].isin(existing_cats)]
+            # --- [PHẦN 1: LOAD DỮ LIỆU CÁC BẢNG (Giữ nguyên code cũ của bạn)] ---
 
-            if not new_cats_df.empty:
-                # Định nghĩa kiểu dữ liệu là NVARCHAR
-                cat_dtype = {'category_name': types.NVARCHAR(length=100)}
+            # 1. Dim Categories
+            if not df_categories.empty:
+                existing_cats = pd.read_sql("SELECT category_name FROM dim_categories", conn)
+                existing_set = set(existing_cats['category_name'])
+                new_cats = df_categories[~df_categories['category_name'].isin(existing_set)]
+                if not new_cats.empty:
+                    # Lưu ý: Cần khai báo dtype cho cột NVARCHAR nếu có dấu
+                    new_cats.to_sql('dim_categories', conn, if_exists='append', index=False,
+                                    dtype={'category_name': types.NVARCHAR(100)})
 
-                new_cats_df.to_sql('dim_categories',
-                                   conn,
-                                   if_exists='append',
-                                   index=False,
-                                   dtype=cat_dtype)  # <-- Thêm dtype
-                print(f"  -> (L) Đã tải {len(new_cats_df)} chủ đề mới vào dim_categories.")
+            # Load Map Categories
+            cat_map = pd.read_sql("SELECT category_key, category_name FROM dim_categories", conn)
+            cat_dict = dict(zip(cat_map['category_name'], cat_map['category_key']))
 
-            # Tải lại toàn bộ map (category_name -> category_key)
-            all_cats_map_df = pd.read_sql("SELECT category_key, category_name FROM dim_categories", conn)
-            cat_name_to_key = dict(zip(all_cats_map_df['category_name'], all_cats_map_df['category_key']))
-
-            # --- 2. Tải Dim Posts ---
+            # 2. Dim Posts
             if not df_posts.empty:
-                posts_to_load = df_posts[['post_id', 'content', 'post_create_at']]
-                posts_dtype = {
-                    'content': types.NVARCHAR()  # NVARCHAR() = NVARCHAR(MAX)
-                }
-                posts_to_load.to_sql('dim_posts', conn, if_exists='append', index=False, dtype=posts_dtype)
-                print(f"  -> (L) Đã tải {len(posts_to_load)} posts mới vào dim_posts.")
+                posts_cut = df_posts[['post_id', 'content', 'post_create_at']].copy()
+                posts_cut.to_sql('dim_posts', conn, if_exists='append', index=False,
+                                 dtype={'content': types.NVARCHAR()})  # NVARCHAR(MAX)
 
-            # Tải lại toàn bộ map (post_id -> post_key)
-            all_posts_map_df = pd.read_sql("SELECT post_key, post_id FROM dim_posts", conn, index_col='post_id')
-            post_id_to_key = all_posts_map_df['post_key'].to_dict()
+            # Load Map Posts
+            post_map = pd.read_sql("SELECT post_key, post_id FROM dim_posts", conn)
+            # Chuyển post_id sang string để map cho chuẩn
+            post_dict = dict(zip(post_map['post_id'].astype(str), post_map['post_key']))
 
-            # --- 3. Tải Bridge Table ---
+            # 3. Bridge Table
             if not df_bridge.empty:
-                df_bridge['post_key'] = df_bridge['post_id'].map(post_id_to_key)
-                df_bridge['category_key'] = df_bridge['category_name'].map(cat_name_to_key)
+                df_bridge['post_key'] = df_bridge['post_id'].astype(str).map(post_dict)
+                df_bridge['category_key'] = df_bridge['category_name'].map(cat_dict)
+                # Loại bỏ dòng nào không map được (NaN)
+                df_final_bridge = df_bridge[['post_key', 'category_key']].dropna().drop_duplicates()
+                df_final_bridge.to_sql('bridge_post_categories', conn, if_exists='append', index=False)
 
-                bridge_to_load = df_bridge[['post_key', 'category_key']].dropna().drop_duplicates()
-                bridge_to_load.to_sql('bridge_post_categories', conn, if_exists='append', index=False)
-                print(f"  -> (L) Đã tải {len(bridge_to_load)} liên kết vào bridge_post_categories.")
-
-            # --- 4. Tải Dim Users ---
+            # 4. Dim Users & Fact Interactions
             if not df_interactions.empty:
-                all_account_ids = df_interactions['account_id'].dropna().unique()
-                existing_users_df = pd.read_sql("SELECT account_id FROM dim_users", conn)
-                existing_users = set(existing_users_df['account_id'])
+                # Tải User mới
+                current_users = pd.read_sql("SELECT account_id FROM dim_users", conn)
+                user_set = set(current_users['account_id'])
+                # Lọc user chưa có trong DB
+                incoming_users = df_interactions['account_id'].dropna().unique()
+                new_users = [u for u in incoming_users if u not in user_set]
 
-                new_users_list = [acc_id for acc_id in all_account_ids if acc_id not in existing_users]
-                if new_users_list:
-                    new_users_df = pd.DataFrame(new_users_list, columns=['account_id'])
-                    new_users_df.to_sql('dim_users', conn, if_exists='append', index=False)
-                    print(f"  -> (L) Đã tải {len(new_users_df)} users mới vào dim_users.")
+                if new_users:
+                    pd.DataFrame({'account_id': new_users}).to_sql('dim_users', conn, if_exists='append', index=False)
 
-                # Tải lại toàn bộ map (account_id -> user_key)
-                all_users_map_df = pd.read_sql("SELECT user_key, account_id FROM dim_users", conn,
-                                               index_col='account_id')
-                user_id_to_key = all_users_map_df['user_key'].to_dict()
+                # Load Map Users
+                user_map = pd.read_sql("SELECT user_key, account_id FROM dim_users", conn)
+                user_dict = dict(zip(user_map['account_id'], user_map['user_key']))
 
-                # --- 5. Tải Fact Interactions ---
-                df_interactions['user_key'] = df_interactions['account_id'].map(user_id_to_key)
-                df_interactions['post_key'] = df_interactions['post_id'].map(post_id_to_key)
+                # Map Fact
+                df_interactions['user_key'] = df_interactions['account_id'].map(user_dict)
+                df_interactions['post_key'] = df_interactions['post_id'].astype(str).map(post_dict)
 
-                fact_to_load = df_interactions[
-                    ['user_key', 'post_key', 'interaction_type', 'interaction_weight', 'create_at']]
-                fact_to_load = fact_to_load.rename(columns={'create_at': 'interaction_create_at'})
+                fact_table = df_interactions[
+                    ['user_key', 'post_key', 'interaction_type', 'interaction_weight', 'create_at']].copy()
+                fact_table.rename(columns={'create_at': 'interaction_create_at'}, inplace=True)
+                # Chỉ lấy dòng đủ key
+                fact_table = fact_table.dropna()
+                fact_table.to_sql('fact_post_interactions', conn, if_exists='append', index=False)
 
-                fact_to_load.to_sql('fact_post_interactions', conn, if_exists='append', index=False)
-                print(f"  -> (L) Đã tải {len(fact_to_load)} tương tác mới vào fact_post_interactions.")
+            # --- [PHẦN 2: CẬP NHẬT WATERMARK (SỬA LỖI)] ---
+            # Chỉ update nếu có dữ liệu mới hơn
+            if new_watermark and new_watermark > old_watermark:
+                # Format time chuẩn SQL
+                ts_str = new_watermark.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
-            # --- 6. CẬP NHẬT DẤU TRANG (WATERMARK) ---
-            # Chỉ cập nhật nếu tất cả các bước trên thành công
-            if new_watermark and new_watermark > get_watermark(engine):  # Đảm bảo là mốc mới
-                timestamp_str = new_watermark.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-                conn.execute(
-                    text(
-                        f"UPDATE etl_watermarks SET last_processed_timestamp = '{timestamp_str}' WHERE table_name = 'posts'")
-                )
-                print(f"  -> (L) Đã cập nhật watermark thành: '{timestamp_str}'")
+                # Câu lệnh UPSERT: Update trước, nếu không thấy dòng nào thì Insert
+                # Ta dùng key là 'global_cursor' (hoặc 'posts' tùy bạn) để đại diện cho cả hệ thống
+                sql_upsert = f"""
+                    UPDATE etl_watermarks 
+                    SET last_processed_timestamp = '{ts_str}' 
+                    WHERE table_name = 'posts';
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO etl_watermarks (table_name, last_processed_timestamp)
+                        VALUES ('posts', '{ts_str}');
+                    END
+                """
+                conn.execute(text(sql_upsert))
+                print(f"  -> (Watermark) Đã lưu thành công mốc thời gian: {ts_str}")
 
             print("Hoàn tất (L) Load.")
 
         except Exception as e:
-            load_successful = False  # Gắn cờ lỗi
-            print(f"LỖI (L) Load: {e}")
-            conn.rollback()  # Hủy bỏ transaction nếu có lỗi
-            print("Đã Rollback transaction.")
+            load_successful = False
+            print(f"❌ LỖI (L) Load: {e}")
+            # Tự động Rollback, không lưu bất cứ thứ gì (cả data lẫn watermark) để đảm bảo nhất quán
+            raise e
 
-    return load_successful  # Trả về trạng thái thành công
-
+    return load_successful
 
 # --- [HÀM CHÍNH] ---
 def main():
@@ -325,24 +334,48 @@ def main():
     app_engine = create_db_engine(config['app_conn_str'], "App DB")
     dwh_engine = create_db_engine(config['dwh_conn_str'], "DWH")
 
-    # Lấy watermark trước
+    # 1. Lấy dấu trang cũ
     last_timestamp = get_watermark(dwh_engine)
 
-    # 3. (E) Trích xuất
+    # 2. (E) Trích xuất
     df_posts, df_interactions, new_watermark = extract_data(app_engine, dwh_engine, last_timestamp)
 
-    # Kiểm tra xem có dữ liệu mới không
+    # 3. CHỐT CHẶN 1: Nếu cả 2 đều rỗng -> Dừng
     if df_posts.empty and df_interactions.empty:
-        print("Không có dữ liệu mới. Kết thúc.")
+        print("-> Không có dữ liệu gì mới. Dừng ETL.")
+        print("===== KẾT THÚC ETL JOB =====")
         return
 
-    # 4. (T) Biến đổi (Chỉ xử lý posts)
-    df_posts, df_categories, df_bridge = transform_enrich(
-        df_posts, config['ml_api_url']
-    )
+    # 4. (T) Biến đổi (Điều phối thông minh)
+    if not df_posts.empty:
+        # Có post mới -> Gọi API ML
+        df_posts, df_categories, df_bridge = transform_enrich(
+            df_posts, config['ml_api_url']
+        )
+    else:
+        print("-> Không có post mới. Bỏ qua bước gọi ML API.")
+        # Tạo DataFrame rỗng CÓ TÊN CỘT (để hàm Load không bị lỗi KeyError)
+        df_categories = pd.DataFrame(columns=['category_name'])
+        df_bridge = pd.DataFrame(columns=['post_id', 'category_name'])
 
-    # 5. (L) Tải (Tải cả posts và interactions)
-    load_successful = load_to_dwh(dwh_engine, df_posts, df_interactions, df_categories, df_bridge, new_watermark)
+    # 5. (L) Tải
+    # Hàm này đã có sẵn "if not empty" nên nó sẽ tự biết cái nào cần tải, cái nào bỏ qua
+    load_successful = load_to_dwh(dwh_engine, df_posts, df_interactions, df_categories, df_bridge, new_watermark,last_timestamp)
+
+    # 6. Cập nhật Watermark
+    # Chỉ cập nhật nếu có post mới thực sự
+    if load_successful and new_watermark and new_watermark > last_timestamp:
+        try:
+            with dwh_engine.connect() as conn:
+                timestamp_str = new_watermark.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                conn.execute(
+                    text(
+                        f"UPDATE etl_watermarks SET last_processed_timestamp = '{timestamp_str}' WHERE table_name = 'posts'")
+                )
+                conn.commit()
+                print(f"  -> (Watermark) Đã cập nhật watermark thành: '{timestamp_str}'")
+        except Exception as e:
+            print(f"LỖI CẬP NHẬT WATERMARK: {e}")
 
     if load_successful:
         print("===== KẾT THÚC ETL JOB (THÀNH CÔNG) =====")

@@ -59,7 +59,7 @@ def calculate_profiles_from_dwh(dwh_engine):
 
     sql_query_scores = """
         SELECT 
-            f.user_key, c.category_name, SUM(f.interaction_weight) AS total_score
+            f.user_key, c.category_name, SUM(f.interaction_weight * EXP(-0.02 * DATEDIFF(day, f.interaction_create_at, GETDATE()))) AS total_score
         FROM fact_post_interactions AS f
         JOIN bridge_post_categories AS b ON f.post_key = b.post_key
         JOIN dim_categories AS c ON b.category_key = c.category_key

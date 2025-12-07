@@ -1,2 +1,23 @@
+# .dockerignore
+
+# Bỏ qua môi trường ảo (Windows/Mac)
 .venv
+venv
+ENV
+
+# Bỏ qua file cấu hình môi trường (Chứa mật khẩu - Quan trọng!)
 .env
+
+# Bỏ qua Git
+.git
+.gitignore
+
+# Bỏ qua các file rác của Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Bỏ qua IDE settings
+.idea
+.vscode

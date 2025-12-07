@@ -1,38 +1,33 @@
-# Dockerfile (cho recommendation_service)
+# Dockerfile (Dùng chung cho cả API và Worker)
 
-# 1. Chọn ảnh nền (dùng chung 3.10-slim)
-FROM python:3.10-slim
+# 1. Chọn ảnh nền (dùng chung version với ETL cho đồng bộ)
+FROM python:3.10-slim-bullseye
 
 # 2. Đặt thư mục làm việc
 WORKDIR /app
 
-# 3. [RẤT QUAN TRỌNG] Cài đặt ODBC Driver (Giống ETL)
-# (Vì các "Job" của service này cần đọc DWH)
-RUN apt-get update && apt-get install -y gnupg curl
+# 3. Cài đặt các gói hệ thống và ODBC Driver (BẮT BUỘC để đọc DWH)
+RUN apt-get update && apt-get install -y gnupg curl \
+    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
+    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
+    && apt-get update \
+    && ACCEPT_EULA=Y apt-get install -y msodbcsql17 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Thêm kho lưu trữ (repository) của Microsoft
-RUN curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -
-RUN curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list
-
-# Cài đặt driver
-RUN apt-get update
-RUN ACCEPT_EULA=Y apt-get install -y msodbcsql17
-
-# 4. Sao chép CHỈ file requirements và cài đặt
-# (Bao gồm fastapi, redis, pyodbc, sqlalchemy...)
+# 4. Copy file requirements trước để tận dụng Cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 5. Sao chép TOÀN BỘ code (api/, jobs/, .env...)
-# (Nhớ tạo .dockerignore để bỏ .venv)
+# 5. Copy toàn bộ code (api/, jobs/, rec_scheduler.py...)
 COPY . .
 
-# 6. Thêm PYTHONPATH (cho "khoa học")
+# 6. Thêm PYTHONPATH để Python tìm thấy các module
 ENV PYTHONPATH="/app"
 
-# 7. Mở cổng cho API
-EXPOSE 8001
+# 7. Mở cổng 7001 (Thông báo cho Docker biết)
+EXPOSE 7001
 
-# 8. Lệnh chạy
-# Chạy API (Quầy hàng) bằng Uvicorn
-CMD ["uvicorn", "api.api:app", "--host", "0.0.0.0", "--port", "8001"]
+# 8. Lệnh chạy mặc định
+# (Mặc định là chạy API. Khi chạy Worker, docker-compose sẽ ghi đè lệnh này)
+CMD ["uvicorn", "api.api:app", "--host", "0.0.0.0", "--port", "7001"]

@@ -127,4 +127,4 @@ async def get_feed(account_id: str, page_size: int = 20):
 
 # --- [HÀM ĐỂ CHẠY FILE] ---
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("api:app", host="0.0.0.0", port=7001, reload=True)
